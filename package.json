@@ -1,0 +1,24 @@
+{
+  "name": "wordpress-html-to-pdf",
+  "version": "0.1.0",
+  "description": "Export Wordpress site content as PDF's.",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "CONFIG_FILE=\"/Users/hwillson/Documents/git/config/arf/wordpress-html-to-pdf/config.json\" node dist/index.js",
+    "watch": "tsc -w"
+  },
+  "author": "Hugh Willson (hugh@octonary.com)",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/html-pdf": "^2.1.2",
+    "@types/node": "^12.0.2",
+    "@types/xml2json": "^0.10.0",
+    "prettier": "^1.17.1",
+    "typescript": "^3.4.5"
+  },
+  "dependencies": {
+    "html-pdf": "^2.2.0",
+    "xml2json": "^0.11.2"
+  }
+}
