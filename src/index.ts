@@ -1,4 +1,4 @@
-import http from "http";
+import https from "https";
 import parser from "xml2json";
 import fs from "fs";
 import pdf from "html-pdf";
@@ -10,13 +10,14 @@ interface Config {
   fetchUrlParams?: string;
   stripTags?: string[];
   stripContent?: string[];
+  filterAndCatalog: Record<string, string>;
 }
 
 let Config: Config;
 
 function fetchContent(url: string) {
   return new Promise((resolve, reject) => {
-    http
+    https
       .get(url, response => {
         let data = "";
         response.on("data", (chunk: string) => {
@@ -61,36 +62,55 @@ function cleanHtml(html: string) {
 
 async function fetchAndSaveHtml(
   url: string
-): Promise<{ data: string; filename: string }> {
-  let newUrl = url;
-  if (Config.fetchUrlParams) {
-    newUrl += `?${Config.fetchUrlParams}`;
+): Promise<{ data: string | null; filename: string | null; subdir?: string }> {
+  let allowed = false;
+  let subdir = "";
+
+  const { filterAndCatalog } = Config;
+  if (filterAndCatalog) {
+    for (let dir of Object.keys(filterAndCatalog)) {
+      const regexp = new RegExp(`(.*)${filterAndCatalog[dir]}(.*)`);
+      if (url.match(regexp)) {
+        allowed = true;
+        subdir = dir;
+        break;
+      }
+    }
+  } else {
+    allowed = true;
   }
-  let data = (await fetchContent(newUrl)) as string;
-  data = cleanHtml(data);
-  let filename = url
-    .replace(Config.sitemapHost, "")
-    .replace(/^\//, "")
-    .replace(/\/$/, "")
-    .replace(/\//g, "-")
-    .replace(".html", "");
-  filename = filename || "index";
-  const saveDir = `${Config.saveDirRoot}/html`;
-  if (!fs.existsSync(saveDir)) {
-    fs.mkdirSync(saveDir);
+
+  if (allowed) {
+    let newUrl = url;
+    if (Config.fetchUrlParams) {
+      newUrl += `?${Config.fetchUrlParams}`;
+    }
+    let data = (await fetchContent(newUrl)) as string;
+    data = cleanHtml(data);
+    let filename = url
+      .replace(Config.sitemapHost, "")
+      .replace(/^\//, "")
+      .replace(/\/$/, "")
+      .replace(/\//g, "-")
+      .replace(".html", "");
+    filename = filename || "index";
+    const saveDir = `${Config.saveDirRoot}/html/${subdir}`;
+    fs.writeFileSync(`${saveDir}/${filename}.html`, data);
+    return {
+      data,
+      filename,
+      subdir
+    };
+  } else {
+    return {
+      data: null,
+      filename: null
+    };
   }
-  fs.writeFileSync(`${saveDir}/${filename}.html`, data);
-  return {
-    data,
-    filename
-  };
 }
 
-function generatePdf(data: string, filename: string) {
-  const saveDir = `${Config.saveDirRoot}/pdf`;
-  if (!fs.existsSync(saveDir)) {
-    fs.mkdirSync(saveDir);
-  }
+function generatePdf(data: string, filename: string, subdir: string = "") {
+  const saveDir = `${Config.saveDirRoot}/pdf/${subdir}`;
   pdf.create(data).toFile(`${saveDir}/${filename}.pdf`, error => {
     if (error) {
       console.error(error);
@@ -109,12 +129,19 @@ async function saveHtml(files: string[]) {
         );
         const urls = urlJson.urlset.url;
         for (const url of urls) {
-          const { data, filename } = await fetchAndSaveHtml(url.loc);
-          generatePdf(data, filename);
+          const { data, filename, subdir } = await fetchAndSaveHtml(url.loc);
+          if (data && filename) {
+            generatePdf(data, filename, subdir);
+          }
         }
       } else {
         console.log(`Saving 1 URL ...`);
-        fetchAndSaveHtml(urlJson.urlset.url.loc);
+        const { data, filename, subdir } = await fetchAndSaveHtml(
+          urlJson.urlset.url.loc
+        );
+        if (data && filename) {
+          generatePdf(data, filename, subdir);
+        }
       }
     }
   }
@@ -131,9 +158,34 @@ function loadConfig() {
   return config;
 }
 
+function createStorageDirectories() {
+  const htmlDir = `${Config.saveDirRoot}/html`;
+  if (!fs.existsSync(htmlDir)) {
+    fs.mkdirSync(htmlDir);
+  }
+
+  const pdfDir = `${Config.saveDirRoot}/pdf`;
+  if (!fs.existsSync(pdfDir)) {
+    fs.mkdirSync(pdfDir);
+  }
+
+  const { filterAndCatalog } = Config;
+  if (filterAndCatalog) {
+    Object.keys(filterAndCatalog).forEach(dir => {
+      const fullHtmlDir = `${htmlDir}/${dir}`;
+      if (!fs.existsSync(fullHtmlDir)) fs.mkdirSync(fullHtmlDir);
+
+      const fullPdfDir = `${pdfDir}/${dir}`;
+      if (!fs.existsSync(fullPdfDir)) fs.mkdirSync(fullPdfDir);
+    });
+  }
+}
+
 (async () => {
   Config = loadConfig();
   console.log("Starting ...");
+  console.log("Creating storage directories ...");
+  createStorageDirectories();
   console.log("Fetching main sitemap ...");
   const sitemapXml = await fetchContent(Config.sitemapUrl);
   const files = getSitemapFiles(sitemapXml as string);

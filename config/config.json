@@ -4,5 +4,6 @@
   "fetchUrlParams": "",
   "saveDirRoot": "",
   "stripTags": [],
-  "stripContent": []
+  "stripContent": [],
+  "filterAndCatalog": {}
 }
